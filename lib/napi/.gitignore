@@ -1,6 +1,0 @@
-.DS_Store
-.direnv
-target/
-build-*/
-jsc/build-jsc-check/
-jsc/tools/__pycache__/
