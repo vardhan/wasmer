@@ -3,7 +3,8 @@
 	url = https://github.com/WebAssembly/testsuite.git
 [submodule "lib/napi"]
 	path = lib/napi
-	url = https://github.com/wasmerio/napi
+	url = https://github.com/vardhan/napi.git
+	branch = go-wasix
 [submodule "wasmer-test-files"]
 	path = wasmer-test-files
 	url = https://github.com/wasmerio/wasmer-test-files.git
