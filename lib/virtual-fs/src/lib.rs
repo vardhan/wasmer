@@ -368,6 +368,17 @@ impl<'a> OpenOptions<'a> {
 pub trait VirtualFile:
     fmt::Debug + AsyncRead + AsyncWrite + AsyncSeek + Unpin + Upcastable + Send
 {
+    /// Try an advisory lock for this open file description. A weak owner lets
+    /// the inode discard locks after the last duplicate descriptor closes.
+    fn try_advisory_lock(
+        &self,
+        _owner: std::sync::Weak<std::sync::atomic::AtomicU64>,
+        _process: std::sync::Weak<dyn crate::LockProcess>,
+        _op: u32,
+    ) -> Result<()> {
+        Err(FsError::Unsupported)
+    }
+
     /// the last time the file was accessed in nanoseconds as a UNIX timestamp
     fn last_accessed(&self) -> u64;
 
@@ -801,4 +812,10 @@ impl Iterator for ReadDir {
         }
         None
     }
+}
+
+/// Process termination may be visible to waiters before the worker finishes
+/// releasing its descriptors. Lock acquisition must observe that same status.
+pub trait LockProcess: std::fmt::Debug + Send + Sync {
+    fn running(&self) -> bool;
 }

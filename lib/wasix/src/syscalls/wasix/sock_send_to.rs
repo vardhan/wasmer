@@ -109,7 +109,7 @@ pub(crate) fn sock_send_to_internal<M: MemorySize>(
             sock,
             Rights::SOCK_SEND_TO,
             |socket, fd| async move {
-                let nonblocking = nonblocking_flag || fd.inner.flags.contains(Fdflags::NONBLOCK);
+                let nonblocking = nonblocking_flag || fd.inner.status_flags().contains(Fdflags::NONBLOCK);
                 let timeout = socket
                     .opt_time(TimeType::WriteTimeout)
                     .ok()

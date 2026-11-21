@@ -124,6 +124,35 @@ impl FileHandle {
 }
 
 impl VirtualFile for FileHandle {
+    fn try_advisory_lock(
+        &self,
+        owner: std::sync::Weak<std::sync::atomic::AtomicU64>,
+        process: std::sync::Weak<dyn crate::LockProcess>,
+        op: u32,
+    ) -> Result<()> {
+        let mut locks = self.lifecycle.locks.lock().unwrap();
+        locks.retain(|(held, proc, _)| {
+            held.strong_count() > 0 && proc.upgrade().is_some_and(|p| p.running())
+        });
+        if op == 0 {
+            locks.retain(|(held, _, _)| !held.ptr_eq(&owner));
+            return Ok(());
+        }
+        if op > 2 {
+            return Err(FsError::InvalidInput);
+        }
+        let exclusive = op == 2;
+        if locks
+            .iter()
+            .any(|(held, _, x)| !held.ptr_eq(&owner) && (*x || exclusive))
+        {
+            return Err(FsError::WouldBlock);
+        }
+        locks.retain(|(held, _, _)| !held.ptr_eq(&owner));
+        locks.push((owner, process, exclusive));
+        Ok(())
+    }
+
     fn last_accessed(&self) -> u64 {
         if let Some(Ok(file)) = &self.arc_file {
             return file.last_accessed();

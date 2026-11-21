@@ -329,18 +329,19 @@ mod tests {
                 offset: Arc::new(AtomicU64::new(0)),
                 rights: Rights::empty(),
                 rights_inheriting: Rights::empty(),
-                flags: Fdflags::from_bits_preserve(n),
+                flags: Arc::new(Fdflags::from_bits_preserve(n).bits().into()),
+                cursor_lock: Default::default(),
                 fd_flags: Fdflagsext::empty(),
             },
         }
     }
 
     fn is_useless_fd(fd: &Fd, n: u16) -> bool {
-        fd.inner.flags.bits() == n
+        fd.inner.status_flags().bits() == n
     }
 
     fn is_useless_fd_inner(fd_inner: &FdInner, n: u16) -> bool {
-        fd_inner.flags.bits() == n
+        fd_inner.status_flags().bits() == n
     }
 
     fn assert_fds_match(l: &FdList, expected: &[(WasiFd, u16)]) {

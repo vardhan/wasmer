@@ -42,6 +42,7 @@ pub fn fd_read<M: MemorySize>(
         let state = env.state.clone();
         wasi_try_ok!(state.fs.get_fd(fd))
     };
+    let _cursor = wasi_try_ok!(lock_file_cursor(ctx.data(), &fd_entry)?);
     let offset = fd_entry.inner.offset.load(Ordering::Acquire) as usize;
 
     ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
@@ -154,7 +155,7 @@ pub(crate) fn fd_read_internal<M: MemorySize>(
         }
 
         let inode = fd_entry.inode;
-        let fd_flags = fd_entry.inner.flags;
+        let fd_flags = fd_entry.inner.status_flags();
 
         let (bytes_read, can_update_cursor) = {
             let mut guard = inode.write();

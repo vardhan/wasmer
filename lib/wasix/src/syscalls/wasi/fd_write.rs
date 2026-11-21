@@ -38,6 +38,7 @@ pub fn fd_write<M: MemorySize>(
         let state = env.state.clone();
         wasi_try_ok!(state.fs.get_fd(fd))
     };
+    let _cursor = wasi_try_ok!(lock_file_cursor(ctx.data(), &fd_entry)?);
     let offset = fd_entry.inner.offset.load(Ordering::Acquire) as usize;
 
     let bytes_written = wasi_try_ok!(fd_write_internal::<M>(
@@ -190,7 +191,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
             return Ok(Err(Errno::Access));
         }
 
-        let fd_flags = fd_entry.inner.flags;
+        let fd_flags = fd_entry.inner.status_flags();
         let mut memory = unsafe { env.memory_view(&ctx) };
 
         let (bytes_written, is_file, can_snapshot) = {
@@ -204,7 +205,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
 
                         let res = __asyncify_light(
                             env,
-                            if fd_entry.inner.flags.contains(Fdflags::NONBLOCK) {
+                            if fd_entry.inner.status_flags().contains(Fdflags::NONBLOCK) {
                                 Some(Duration::ZERO)
                             } else {
                                 None
@@ -212,7 +213,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
                             async {
                                 let mut handle = handle.write().unwrap();
                                 if !is_stdio {
-                                    if fd_entry.inner.flags.contains(Fdflags::APPEND) {
+                                    if fd_entry.inner.status_flags().contains(Fdflags::APPEND) {
                                         // `fdflags::append` means we need to seek to the end before writing.
                                         offset = fd_entry.inode.stat.read().unwrap().st_size;
                                         fd_entry.inner.offset.store(offset, Ordering::Release);

@@ -69,7 +69,7 @@ pub(crate) fn sock_connect_internal(
     let net = env.net().clone();
     let tasks = ctx.data().tasks().clone();
     let nonblocking = match env.state.fs.get_fd(sock) {
-        Ok(fd_entry) => fd_entry.inner.flags.contains(Fdflags::NONBLOCK),
+        Ok(fd_entry) => fd_entry.inner.status_flags().contains(Fdflags::NONBLOCK),
         Err(err) => return Ok(Err(err)),
     };
     wasi_try_ok_ok!(__sock_upgrade(

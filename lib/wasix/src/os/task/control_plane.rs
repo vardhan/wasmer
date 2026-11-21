@@ -132,6 +132,13 @@ impl WasiControlPlane {
     // FIXME: De-register terminated processes!
     // Currently they just accumulate.
     pub fn new_process(&self, module_hash: ModuleHash) -> Result<WasiProcess, ControlPlaneError> {
+        self.new_child_process(module_hash, 0.into())
+    }
+    pub(crate) fn new_child_process(
+        &self,
+        module_hash: ModuleHash,
+        parent: WasiProcessId,
+    ) -> Result<WasiProcess, ControlPlaneError> {
         if let Some(max) = self.state.config.max_task_count
             && self.active_task_count() >= max
         {
@@ -146,6 +153,7 @@ impl WasiControlPlane {
         let mut mutable = self.state.mutable.write().unwrap();
 
         let pid = mutable.next_process_id()?;
+        proc.parent = parent;
         proc.set_pid(pid);
         mutable.processes.insert(pid, proc.clone());
         Ok(proc)

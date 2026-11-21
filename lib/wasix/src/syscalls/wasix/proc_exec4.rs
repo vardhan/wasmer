@@ -2,7 +2,7 @@ use virtual_mio::block_on;
 use wasmer::FromToNativeWasmType;
 
 use super::*;
-use crate::{VIRTUAL_ROOT_FD, WasiFs, syscalls::*};
+use crate::{WasiFs, syscalls::*};
 
 /// Replaces the current process with a new process, with proper `WasmPtr<WasmPtr<u8>>` string lists.
 ///
@@ -117,7 +117,7 @@ pub(crate) fn proc_exec4_impl<M: MemorySize>(
             unsafe { ctx.data().get_memory_and_wasi_state_and_inodes(&ctx, 0) };
         match state
             .fs
-            .get_inode_at_path(inodes, VIRTUAL_ROOT_FD, name, true)
+            .get_inode_at_path(inodes, state.fs.root_fd(), name, true)
         {
             Ok(_) => (),
             Err(Errno::Notdir) => return Ok(Errno::Notdir),
@@ -134,7 +134,7 @@ pub(crate) fn proc_exec4_impl<M: MemorySize>(
     let (_, cur_dir) = {
         let (memory, state, inodes) =
             unsafe { ctx.data().get_memory_and_wasi_state_and_inodes(&ctx, 0) };
-        match state.fs.get_current_dir(inodes, crate::VIRTUAL_ROOT_FD) {
+        match state.fs.get_current_dir(inodes, state.fs.root_fd()) {
             Ok(a) => a,
             Err(err) => {
                 warn!("failed to create subprocess for fork - {}", err);
@@ -350,7 +350,7 @@ pub(crate) fn find_executable_in_path<'a>(
     let mut encountered_eaccess = false;
     for p in path {
         let full_path = format!("{}/{}", p.trim_end_matches('/'), file_name);
-        match fs.get_inode_at_path(inodes, VIRTUAL_ROOT_FD, &full_path, true) {
+        match fs.get_inode_at_path(inodes, fs.root_fd(), &full_path, true) {
             Ok(_) => return FindExecutableResult::Found(full_path),
             Err(Errno::Access) => encountered_eaccess = true,
             Err(_) => (),

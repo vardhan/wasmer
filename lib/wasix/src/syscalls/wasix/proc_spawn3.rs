@@ -2,7 +2,7 @@ use virtual_mio::block_on;
 use wasmer_wasix_types::wasi::ProcSpawnFdOpName;
 
 use super::*;
-use crate::{VIRTUAL_ROOT_FD, WasiFs, syscalls::*};
+use crate::{WasiFs, syscalls::*};
 
 /// Spawns a new sub-process (posix-spawn style) with proper `WasmPtr<WasmPtr<u8>>` string lists.
 ///
@@ -152,7 +152,30 @@ pub(crate) fn proc_spawn3_impl<M: MemorySize>(
 
     _prepare_wasi(&mut child_env, Some(args), envs, signals);
 
+    let floor = fd_ops
+        .iter()
+        .filter(|op| {
+            matches!(
+                op.cmd,
+                ProcSpawnFdOpName::Close | ProcSpawnFdOpName::Dup2 | ProcSpawnFdOpName::Open
+            )
+        })
+        .map(|op| op.fd)
+        .max()
+        .unwrap_or(2)
+        .saturating_add(1);
     for fd_op in fd_ops {
+        if matches!(
+            fd_op.cmd,
+            ProcSpawnFdOpName::Close | ProcSpawnFdOpName::Open
+        ) || (fd_op.cmd == ProcSpawnFdOpName::Dup2 && fd_op.src_fd != fd_op.fd)
+        {
+            if wasi_try_ok!(child_env.state.fs.relocate_spawn_preopen(fd_op.fd, floor))
+                && fd_op.cmd == ProcSpawnFdOpName::Close
+            {
+                continue;
+            }
+        }
         wasi_try_ok!(apply_fd_op(&mut child_env, &memory, &fd_op));
     }
 
@@ -228,7 +251,7 @@ pub(crate) fn apply_fd_op<M: MemorySize>(
             name = env.state.fs.relative_path_to_absolute(name.to_owned());
             match path_open_internal(
                 env,
-                VIRTUAL_ROOT_FD,
+                env.state.fs.root_fd(),
                 op.dirflags,
                 &name,
                 op.oflags,

@@ -214,6 +214,13 @@ impl Default for Pipe {
 }
 
 impl PipeTx {
+    /// Resolves when all readers close; lets asynchronous producers cancel pending work.
+    pub async fn reader_closed(&self) {
+        if let Some(tx) = &self.tx {
+            tx.closed().await;
+        }
+    }
+
     pub fn close(&mut self) {
         _ = self.tx.take();
     }

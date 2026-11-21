@@ -1,6 +1,67 @@
 use super::*;
 use crate::syscalls::*;
 
+pub fn resolve_to_pipe<M: MemorySize>(
+    ctx: FunctionEnvMut<'_, WasiEnv>,
+    host: WasmPtr<u8, M>,
+    len: M::Offset,
+    output: WasiFd,
+) -> Errno {
+    let env = ctx.data();
+    let mem = unsafe { env.memory_view(&ctx) };
+    let name = match host.read_utf8_string(&mem, len) {
+        Ok(name) => name,
+        Err(_) => return Errno::Inval,
+    };
+    let fd = wasi_try!(env.state.fs.get_fd(output));
+    if !fd.inner.rights.contains(Rights::FD_WRITE) {
+        return Errno::Access;
+    }
+    let mut tx = match &*fd.inode.read() {
+        Kind::PipeTx { tx } => tx.clone(),
+        _ => return Errno::Badf,
+    };
+    let net = env.net().clone();
+    let task = env.tasks().task_shared(Box::new(move || {
+        Box::pin(async move {
+            let result = tokio::select! {
+                result = net.resolve(&name,None,None) => result,
+                _ = tx.reader_closed() => return,
+            };
+            let mut reply = Vec::new();
+            match result {
+                Ok(addrs) if addrs.len() > 65536 => {
+                    reply.extend_from_slice(&(Errno::Overflow as u16).to_le_bytes())
+                }
+                Ok(addrs) => {
+                    reply.extend_from_slice(&0u16.to_le_bytes());
+                    for addr in addrs {
+                        match addr {
+                            std::net::IpAddr::V4(v) => {
+                                reply.push(4);
+                                reply.extend_from_slice(&v.octets());
+                            }
+                            std::net::IpAddr::V6(v) => {
+                                reply.push(6);
+                                reply.extend_from_slice(&v.octets());
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    reply.extend_from_slice(&(net_error_into_wasi_err(err) as u16).to_le_bytes())
+                }
+            }
+            let _ = std::io::Write::write_all(&mut tx, &reply);
+        })
+    }));
+    if task.is_err() {
+        Errno::Again
+    } else {
+        Errno::Success
+    }
+}
+
 /// ### `resolve()`
 /// Resolves a hostname and a port to one or more IP addresses.
 ///

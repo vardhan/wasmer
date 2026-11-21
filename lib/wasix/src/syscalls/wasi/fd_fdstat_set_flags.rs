@@ -46,6 +46,6 @@ pub(crate) fn fd_fdstat_set_flags_internal(
         return Ok(Errno::Access);
     }
 
-    fd_entry.flags = flags;
+    fd_entry.flags.store(flags.bits(), Ordering::Release);
     Ok(Errno::Success)
 }

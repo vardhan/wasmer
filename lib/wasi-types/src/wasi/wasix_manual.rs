@@ -212,7 +212,7 @@ unsafe impl ValueType for StackSnapshot {
 #[derive(Clone, Copy)]
 pub union JoinStatusUnion {
     pub nothing: u8,
-    pub exit_normal: Errno,
+    pub exit_normal: u16,
     pub exit_signal: ErrnoSignal,
     pub stopped: Signal,
 }

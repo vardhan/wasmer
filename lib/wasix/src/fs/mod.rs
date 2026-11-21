@@ -578,6 +578,7 @@ impl FileSystem for WasiFsRoot {
 /// stay consistent under concurrency.
 pub struct WasiFs {
     //pub repo: Repo,
+    root_fd: std::sync::atomic::AtomicU32,
     pub preopen_fds: RwLock<Vec<u32>>,
     pub fd_map: RwLock<FdList>,
     pub current_dir: Mutex<String>,
@@ -711,6 +712,7 @@ impl WasiFs {
     /// Forking the WasiState is used when either fork or vfork is called
     pub fn fork(&self) -> Self {
         Self {
+            root_fd: self.root_fd().into(),
             preopen_fds: RwLock::new(self.preopen_fds.read().unwrap().clone()),
             fd_map: RwLock::new(self.fd_map.read().unwrap().clone()),
             current_dir: Mutex::new(self.current_dir.lock().unwrap().clone()),
@@ -871,6 +873,7 @@ impl WasiFs {
         });
 
         let wasi_fs = Self {
+            root_fd: VIRTUAL_ROOT_FD.into(),
             preopen_fds: RwLock::new(vec![]),
             fd_map: RwLock::new(FdList::new()),
             current_dir: Mutex::new("/".to_string()),
@@ -1265,7 +1268,7 @@ impl WasiFs {
         }
 
         if path_str.starts_with('/') {
-            cur_inode = self.get_fd_inode(VIRTUAL_ROOT_FD)?;
+            cur_inode = self.get_fd_inode(self.root_fd())?;
         }
 
         let is_all_slashes = path_str.bytes().all(|b| b == b'/');
@@ -1687,7 +1690,7 @@ impl WasiFs {
     ) -> Result<(WasiFd, PathBuf), Errno> {
         let relative_posix = PosixPath::from_path(relative_path);
         if matches!(symlink_kind, SymlinkKind::Virtual) && relative_posix.is_absolute() {
-            return Ok((VIRTUAL_ROOT_FD, relative_path.to_owned()));
+            return Ok((self.root_fd(), relative_path.to_owned()));
         }
 
         let symlink_parent = match symlink_kind {
@@ -1730,7 +1733,7 @@ impl WasiFs {
                 };
 
                 return Ok((
-                    VIRTUAL_ROOT_FD,
+                    self.root_fd(),
                     PosixPath::from_path(&mount_path)
                         .join(&contained_target.as_posix_path())
                         .into_path_buf(),
@@ -1739,7 +1742,7 @@ impl WasiFs {
         };
 
         Ok((
-            VIRTUAL_ROOT_FD,
+            self.root_fd(),
             PosixPathBuf::resolve_relative(
                 &PosixPath::from_path(&symlink_parent),
                 &relative_posix,
@@ -1822,7 +1825,7 @@ impl WasiFs {
             .ok_or(Errno::Badf)
             .cloned();
 
-        if ret.is_err() && fd == VIRTUAL_ROOT_FD {
+        if ret.is_err() && fd == self.root_fd() {
             Ok(Self::virtual_root_fd(self.root_inode.clone()))
         } else {
             ret
@@ -1831,7 +1834,7 @@ impl WasiFs {
 
     pub fn get_fd_inode(&self, fd: WasiFd) -> Result<InodeGuard, Errno> {
         // see `VIRTUAL_ROOT_FD` for details as to why this exists
-        if fd == VIRTUAL_ROOT_FD {
+        if fd == self.root_fd() {
             return Ok(self.root_inode.clone());
         }
         self.fd_map
@@ -1875,7 +1878,7 @@ impl WasiFs {
                     fs_rights_inheriting: Rights::empty(),
                 });
             }
-            VIRTUAL_ROOT_FD => {
+            n if n == self.root_fd() => {
                 return Ok(Fdstat {
                     fs_filetype: Filetype::Directory,
                     fs_flags: Fdflags::empty(),
@@ -1910,13 +1913,45 @@ impl WasiFs {
                 },
                 _ => Filetype::Unknown,
             },
-            fs_flags: fd.inner.flags,
+            fs_flags: fd.inner.status_flags(),
             fs_rights_base: fd.inner.rights,
             fs_rights_inheriting: fd.inner.rights_inheriting, // TODO(lachlan): Is this right?
         })
     }
 
+    pub fn root_fd(&self) -> WasiFd {
+        self.root_fd.load(Ordering::Acquire)
+    }
+
+    // Spawn actions can target the customary preopen slots (notably fd 3).
+    // Move those capabilities before overwriting their entries in the child.
+    pub(crate) fn relocate_spawn_preopen(&self, fd: WasiFd, floor: WasiFd) -> Result<bool, Errno> {
+        let mut preopens = self.preopen_fds.write().unwrap();
+        let Some(slot) = preopens.iter_mut().find(|p| **p == fd) else {
+            return Ok(false);
+        };
+        let mut map = self.fd_map.write().unwrap();
+        let moved = Self::clone_fd_locked(self, &mut map, fd, floor, Some(false))?;
+        map.remove(fd);
+        if fd == self.root_fd() {
+            self.root_fd.store(moved, Ordering::Release);
+        }
+        *slot = moved;
+        Ok(true)
+    }
+
     pub fn prestat_fd(&self, fd: WasiFd) -> Result<Prestat, Errno> {
+        // A spawned guest may have files or holes before its last preopen.
+        // ENOTDIR lets a Preview 1 scanner advance to the relocated mounts.
+        if !self.preopen_fds.read().unwrap().contains(&fd) {
+            return Err(
+                if self.preopen_fds.read().unwrap().iter().any(|p| *p > fd) {
+                    Errno::Notdir
+                } else {
+                    Errno::Badf
+                },
+            );
+        }
         let inode = self.get_fd_inode(fd)?;
         //trace!("in prestat_fd {:?}", self.get_fd(fd)?);
 
@@ -2035,7 +2070,8 @@ impl WasiFs {
             inner: FdInner {
                 rights,
                 rights_inheriting,
-                flags: fs_flags,
+                flags: Arc::new(fs_flags.bits().into()),
+                cursor_lock: Default::default(),
                 offset: Arc::new(AtomicU64::new(0)),
                 fd_flags,
             },
@@ -2104,7 +2140,8 @@ impl WasiFs {
                 inner: FdInner {
                     rights: fd.inner.rights,
                     rights_inheriting: fd.inner.rights_inheriting,
-                    flags: fd.inner.flags,
+                    flags: fd.inner.flags.clone(),
+                    cursor_lock: fd.inner.cursor_lock.clone(),
                     offset: fd.inner.offset.clone(),
                     fd_flags: match cloexec {
                         None => fd.inner.fd_flags,
@@ -2131,7 +2168,7 @@ impl WasiFs {
     ) -> Result<Fd, Errno> {
         match fd_map.get(fd) {
             Some(fd) => Ok(fd.clone()),
-            None if fd == VIRTUAL_ROOT_FD => Ok(Self::virtual_root_fd(fs.root_inode.clone())),
+            None if fd == fs.root_fd() => Ok(Self::virtual_root_fd(fs.root_inode.clone())),
             None => Err(Errno::Badf),
         }
     }
@@ -2141,7 +2178,8 @@ impl WasiFs {
             inner: FdInner {
                 rights: ALL_RIGHTS,
                 rights_inheriting: ALL_RIGHTS,
-                flags: Fdflags::empty(),
+                flags: Arc::new(Fdflags::empty().bits().into()),
+                cursor_lock: Default::default(),
                 offset: Arc::new(AtomicU64::new(0)),
                 fd_flags: Fdflagsext::empty(),
             },
@@ -2204,6 +2242,8 @@ impl WasiFs {
                         f.set(Fdflagsext::CLOEXEC, false);
                         f
                     },
+                    flags: fd_entry.inner.flags.clone(),
+                    cursor_lock: fd_entry.inner.cursor_lock.clone(),
                     ..fd_entry.inner
                 },
                 inode: fd_entry.inode.clone(),
@@ -2612,8 +2652,9 @@ impl WasiFs {
                 inner: FdInner {
                     rights,
                     rights_inheriting: Rights::empty(),
-                    flags: fd_flags,
-                    offset: Arc::new(AtomicU64::new(0)),
+                    flags: Arc::new(fd_flags.bits().into()),
+                cursor_lock: Default::default(),
+                offset: Arc::new(AtomicU64::new(0)),
                     fd_flags: Fdflagsext::empty(),
                 },
                 // since we're not calling open on this, we don't need open flags

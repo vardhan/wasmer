@@ -62,6 +62,8 @@ pub(crate) fn fd_seek_internal(
         return Ok(Err(Errno::Access));
     }
 
+    let _cursor = wasi_try_ok_ok!(lock_file_cursor(env, &fd_entry)?);
+
     // TODO: handle case if fd is a dir?
     let new_offset = match whence {
         Whence::Cur => {

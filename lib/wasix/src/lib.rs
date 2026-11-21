@@ -550,6 +550,7 @@ fn wasix_exports_32(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "fd_renumber" => Function::new_typed_with_env(&mut store, env, fd_renumber),
         "fd_dup" => Function::new_typed_with_env(&mut store, env, fd_dup::<Memory32>),
         "fd_dup2" => Function::new_typed_with_env(&mut store, env, fd_dup2::<Memory32>),
+        "fd_flock" => Function::new_typed_with_env(&mut store, env, fd_flock),
         "fd_fdflags_get" => Function::new_typed_with_env(&mut store, env, fd_fdflags_get::<Memory32>),
         "fd_fdflags_set" => Function::new_typed_with_env(&mut store, env, fd_fdflags_set),
         "fd_event" => Function::new_typed_with_env(&mut store, env, fd_event::<Memory32>),
@@ -654,8 +655,10 @@ fn wasix_exports_32(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "sock_send" => Function::new_typed_with_env(&mut store, env, sock_send::<Memory32>),
         "sock_send_to" => Function::new_typed_with_env(&mut store, env, sock_send_to::<Memory32>),
         "sock_send_file" => Function::new_typed_with_env(&mut store, env, sock_send_file::<Memory32>),
+        "sock_send_file_current" => Function::new_typed_with_env(&mut store, env, sock_send_file_current::<Memory32>),
         "sock_shutdown" => Function::new_typed_with_env(&mut store, env, sock_shutdown),
         "resolve" => Function::new_typed_with_env(&mut store, env, resolve::<Memory32>),
+        "resolve_to_pipe" => Function::new_typed_with_env(&mut store, env, resolve_to_pipe::<Memory32>),
     };
     namespace
 }
@@ -700,6 +703,7 @@ fn wasix_exports_64(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "fd_renumber" => Function::new_typed_with_env(&mut store, env, fd_renumber),
         "fd_dup" => Function::new_typed_with_env(&mut store, env, fd_dup::<Memory64>),
         "fd_dup2" => Function::new_typed_with_env(&mut store, env, fd_dup2::<Memory64>),
+        "fd_flock" => Function::new_typed_with_env(&mut store, env, fd_flock),
         "fd_fdflags_get" => Function::new_typed_with_env(&mut store, env, fd_fdflags_get::<Memory64>),
         "fd_fdflags_set" => Function::new_typed_with_env(&mut store, env, fd_fdflags_set),
         "fd_event" => Function::new_typed_with_env(&mut store, env, fd_event::<Memory64>),
@@ -804,8 +808,10 @@ fn wasix_exports_64(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "sock_send" => Function::new_typed_with_env(&mut store, env, sock_send::<Memory64>),
         "sock_send_to" => Function::new_typed_with_env(&mut store, env, sock_send_to::<Memory64>),
         "sock_send_file" => Function::new_typed_with_env(&mut store, env, sock_send_file::<Memory64>),
+        "sock_send_file_current" => Function::new_typed_with_env(&mut store, env, sock_send_file_current::<Memory64>),
         "sock_shutdown" => Function::new_typed_with_env(&mut store, env, sock_shutdown),
         "resolve" => Function::new_typed_with_env(&mut store, env, resolve::<Memory64>),
+        "resolve_to_pipe" => Function::new_typed_with_env(&mut store, env, resolve_to_pipe::<Memory64>),
     };
     namespace
 }

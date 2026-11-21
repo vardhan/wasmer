@@ -322,7 +322,7 @@ impl WasiThread {
             _ => Errno::Intr.into(),
         };
         // This will only set the status code if its not already set
-        self.set_status_finished(Ok(default_exitcode));
+        self.state.status.finish_by_signal(sig, default_exitcode);
         self.try_join()
             .map(|r| r.unwrap_or(default_exitcode))
             .unwrap_or(default_exitcode)

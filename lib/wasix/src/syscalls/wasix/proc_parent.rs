@@ -18,8 +18,8 @@ pub fn proc_parent<M: MemorySize>(
         Errno::Success
     } else if let Some(process) = env.control_plane.get_process(pid) {
         let memory = unsafe { env.memory_view(&ctx) };
-        Span::current().record("parent", process.pid().raw());
-        wasi_try_mem!(ret_parent.write(&memory, process.pid().raw() as Pid));
+        Span::current().record("parent", process.ppid().raw());
+        wasi_try_mem!(ret_parent.write(&memory, process.ppid().raw() as Pid));
         Errno::Success
     } else {
         Errno::Badf

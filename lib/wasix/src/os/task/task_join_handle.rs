@@ -72,6 +72,7 @@ pub trait VirtualTaskHandle: std::fmt::Debug + Send + Sync + 'static {
 /// A handle that allows awaiting the termination of a task, and retrieving its exit code.
 #[derive(Debug)]
 pub struct OwnedTaskStatus {
+    pub(crate) exit_signal: std::sync::atomic::AtomicU8,
     // The signal handler that can be invoked for this owned task
     signal_handler: Arc<DynSignalHandlerAbi>,
 
@@ -86,6 +87,7 @@ impl OwnedTaskStatus {
     pub fn new(status: TaskStatus) -> Self {
         let (tx, rx) = tokio::sync::watch::channel(status);
         Self {
+            exit_signal: Default::default(),
             signal_handler: default_signal_handler(),
             watch_tx: tx,
             watch_rx: rx,
@@ -115,6 +117,16 @@ impl OwnedTaskStatus {
                 *value = TaskStatus::Running;
             }
         })
+    }
+
+    pub(crate) fn finish_by_signal(&self, signal: crate::syscalls::Signal, code: ExitCode) {
+        self.watch_tx.send_modify(|old| {
+            if !old.is_finished() {
+                self.exit_signal
+                    .store(signal as u8, std::sync::atomic::Ordering::Release);
+                *old = TaskStatus::Finished(Ok(code));
+            }
+        });
     }
 
     /// Marks the task as finished.

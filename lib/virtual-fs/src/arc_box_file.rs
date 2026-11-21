@@ -87,6 +87,18 @@ impl AsyncRead for ArcBoxFile {
 }
 
 impl VirtualFile for ArcBoxFile {
+    fn try_advisory_lock(
+        &self,
+        owner: std::sync::Weak<std::sync::atomic::AtomicU64>,
+        process: std::sync::Weak<dyn crate::LockProcess>,
+        op: u32,
+    ) -> crate::Result<()> {
+        self.inner
+            .lock()
+            .unwrap()
+            .try_advisory_lock(owner, process, op)
+    }
+
     fn last_accessed(&self) -> u64 {
         let inner = self.inner.lock().unwrap();
         inner.last_accessed()

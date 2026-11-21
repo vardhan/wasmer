@@ -34,9 +34,17 @@ pub struct Fd {
 pub struct FdInner {
     pub rights: Rights,
     pub rights_inheriting: Rights,
-    pub flags: Fdflags,         // This is file table related flags, not fd flags
+    pub flags: Arc<std::sync::atomic::AtomicU16>,
+    /// Shared by every descriptor that advances this file position.
+    pub cursor_lock: Arc<tokio::sync::Mutex<()>>,
     pub offset: Arc<AtomicU64>, // This also belongs in the file table
     pub fd_flags: Fdflagsext,   // This is the actual FD flags that belongs here
+}
+
+impl FdInner {
+    pub fn status_flags(&self) -> Fdflags {
+        Fdflags::from_bits_preserve(self.flags.load(std::sync::atomic::Ordering::Acquire))
+    }
 }
 
 impl Fd {

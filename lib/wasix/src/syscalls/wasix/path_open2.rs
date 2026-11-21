@@ -1,5 +1,4 @@
 use super::*;
-use crate::VIRTUAL_ROOT_FD;
 use crate::fs::{FdList, WasiFs};
 use crate::syscalls::*;
 
@@ -221,7 +220,7 @@ fn path_open_internal_with_symlink_depth(
     let inodes = &state.inodes;
     let follow_symlinks = dirflags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0;
     let effective_dirfd = if path.starts_with('/') {
-        VIRTUAL_ROOT_FD
+        state.fs.root_fd()
     } else {
         dirfd
     };
@@ -644,7 +643,9 @@ fn path_open_internal_with_symlink_depth(
 
             let requested_config = open_options
                 .read(minimum_rights.read)
-                .append(minimum_rights.append)
+                // fd_write applies the current open-description flag under the inode lock.
+                // A permanent append flag on this shared handle would defeat F_SETFL.
+                .append(false)
                 .write(minimum_rights.write)
                 .create_new(true)
                 .get_config();

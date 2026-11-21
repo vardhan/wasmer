@@ -25,7 +25,7 @@ pub use self::{
     },
 };
 use crate::{
-    Runtime, SpawnError, VIRTUAL_ROOT_FD, WasiEnv,
+    Runtime, SpawnError, WasiEnv,
     fs::Kind,
     os::{
         command::{Commands, VirtualCommand},
@@ -418,7 +418,7 @@ async fn load_executable_from_wasi_fs(
         .fs
         .get_inode_at_path(
             &env.state.inodes,
-            VIRTUAL_ROOT_FD,
+            env.state.fs.root_fd(),
             path.to_string_lossy().as_ref(),
             true,
         )

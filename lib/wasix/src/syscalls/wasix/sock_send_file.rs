@@ -48,6 +48,65 @@ pub fn sock_send_file<M: MemorySize>(
     Ok(Errno::Success)
 }
 
+pub fn sock_send_file_current<M: MemorySize>(
+    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    sock: WasiFd,
+    input: WasiFd,
+    count: u32,
+    sent: WasmPtr<u32, M>,
+) -> Result<Errno, WasiError> {
+    let env = ctx.data();
+    let mem = unsafe { env.memory_view(&ctx) };
+    wasi_try_mem_ok!(sent.write(&mem, 0));
+    let entry = wasi_try_ok!(env.state.fs.get_fd(input));
+    if !entry.inner.rights.contains(Rights::FD_READ) {
+        return Ok(Errno::Access);
+    }
+    let _cursor = wasi_try_ok!(lock_file_cursor(env, &entry)?);
+    let handle = match &*entry.inode.read() {
+        Kind::File {
+            handle: Some(handle),
+            ..
+        } => handle.clone(),
+        _ => return Ok(Errno::Spipe),
+    };
+    let pos = entry.inner.offset.load(Ordering::Acquire);
+    let data = wasi_try_ok!(__asyncify(&mut ctx, None, async move {
+        let mut buf = vec![0; count.min(32768) as usize];
+        let mut file = handle.write().unwrap();
+        file.seek(std::io::SeekFrom::Start(pos))
+            .await
+            .map_err(map_io_err)?;
+        let n = file.read(&mut buf).await.map_err(map_io_err)?;
+        buf.truncate(n);
+        Ok(buf)
+    })?);
+    if data.is_empty() {
+        return Ok(Errno::Success);
+    }
+    let tasks = ctx.data().tasks().clone();
+    let n = wasi_try_ok!(__sock_asyncify_mut(
+        &mut ctx,
+        sock,
+        Rights::SOCK_SEND,
+        |socket, fd| async move {
+            let nonblock = fd.inner.status_flags().contains(Fdflags::NONBLOCK);
+            socket
+                .send(
+                    tasks.deref(),
+                    &data,
+                    socket.opt_time(TimeType::WriteTimeout).ok().flatten(),
+                    nonblock,
+                )
+                .await
+        }
+    ));
+    entry.inner.offset.fetch_add(n as u64, Ordering::AcqRel);
+    let mem = unsafe { ctx.data().memory_view(&ctx) };
+    wasi_try_mem_ok!(sent.write(&mem, n as u32));
+    Ok(Errno::Success)
+}
+
 #[allow(clippy::await_holding_lock)]
 pub(crate) fn sock_send_file_internal(
     ctx: &mut FunctionEnvMut<'_, WasiEnv>,
@@ -62,6 +121,8 @@ pub(crate) fn sock_send_file_internal(
     let state = env.state.clone();
     let fd_entry = wasi_try_ok_ok!(state.fs.get_fd(in_fd));
 
+    let _cursor = wasi_try_ok_ok!(lock_file_cursor(env, &fd_entry)?);
+
     // Set the offset of the file
     fd_entry.inner.offset.store(offset, Ordering::Release);
 
@@ -71,7 +132,7 @@ pub(crate) fn sock_send_file_internal(
         let sub_count = count.min(4096);
         count -= sub_count;
 
-        let fd_flags = fd_entry.inner.flags;
+        let fd_flags = fd_entry.inner.status_flags();
 
         let data = {
             match in_fd {

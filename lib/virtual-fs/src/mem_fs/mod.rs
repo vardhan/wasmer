@@ -30,6 +30,13 @@ const ROOT_INODE: Inode = 0;
 
 #[derive(Debug, Default)]
 struct FileLifecycle {
+    locks: std::sync::Mutex<
+        Vec<(
+            std::sync::Weak<std::sync::atomic::AtomicU64>,
+            std::sync::Weak<dyn crate::LockProcess>,
+            bool,
+        )>,
+    >,
     open_handles: AtomicUsize,
     unlinked: AtomicBool,
 }

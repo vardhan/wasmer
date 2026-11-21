@@ -38,6 +38,25 @@ pub use wasix::*;
 use wasmer_journal::SnapshotTrigger;
 use wasmer_wasix_types::wasix::ThreadStartType;
 
+/// A transfer with an implicit offset holds this guard from selecting the
+/// starting byte until the actual byte count is known. Pipes and sockets
+/// have no file position and must allow independent reads and writes.
+fn lock_file_cursor(
+    env: &WasiEnv,
+    fd: &Fd,
+) -> WasiResult<Option<tokio::sync::OwnedMutexGuard<()>>> {
+    if !matches!(&*fd.inode.read(), Kind::File { .. }) || fd.is_stdio {
+        return Ok(Ok(None));
+    }
+    let lock = &fd.inner.cursor_lock;
+    if let Ok(guard) = lock.clone().try_lock_owned() {
+        return Ok(Ok(Some(guard)));
+    }
+    __asyncify_light(env, None, async {
+        Ok(Some(lock.clone().lock_owned().await))
+    })
+}
+
 pub mod legacy;
 
 pub(crate) use std::{
@@ -815,7 +834,7 @@ where
                 drop(guard);
 
                 // Start the work using the socket
-                let work = actor(socket, fd_entry.inner.flags);
+                let work = actor(socket, fd_entry.inner.status_flags());
 
                 // Block on the work and process it
                 let res = block_on(work);

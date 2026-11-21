@@ -68,12 +68,18 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
                     };
                     wasi_try_mem_ok!(pid_ptr.write(&view, option_pid));
 
-                    JoinStatus {
+                    let signal = ctx.data().control_plane.get_process(pid)
+                        .map(|p| p.finished.exit_signal.load(Ordering::Acquire)).unwrap_or(0);
+                    if let Ok(signal) = Signal::try_from(signal) && signal != Signal::Signone {
+                        JoinStatus { tag: JoinStatusType::ExitSignal, u: JoinStatusUnion {
+                            exit_signal: wasmer_wasix_types::wasi::ErrnoSignal { exit_code: Errno::Intr, signal }
+                        }}
+                    } else { JoinStatus {
                         tag: JoinStatusType::ExitNormal,
                         u: JoinStatusUnion {
-                            exit_normal: exit_code.into(),
+                            exit_normal: exit_code.raw() as u16,
                         },
-                    }
+                    }}
                 }
                 JoinStatusResult::Err(err) => {
                     ret = err;

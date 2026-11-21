@@ -2,8 +2,6 @@ use std::path::Path;
 
 use virtual_fs::FileSystem;
 
-use crate::VIRTUAL_ROOT_FD;
-
 use super::*;
 
 impl JournalEffector {
@@ -27,7 +25,7 @@ impl JournalEffector {
         path: &str,
     ) -> anyhow::Result<()> {
         // see `VIRTUAL_ROOT_FD` for details as to why this exists
-        if fd == VIRTUAL_ROOT_FD {
+        if fd == ctx.data().state.fs.root_fd() {
             ctx.data().state.fs.root_fs.remove_file(Path::new(path))?;
         } else {
             let ret = crate::syscalls::path_unlink_file_internal(ctx, fd, path)?;

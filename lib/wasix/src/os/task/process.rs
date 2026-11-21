@@ -9,7 +9,7 @@ use std::{
     convert::TryInto,
     ops::Range,
     sync::{
-        Arc, Condvar, Mutex, MutexGuard, RwLock, Weak,
+        Arc, Condvar, Mutex, MutexGuard,
         atomic::{AtomicU32, Ordering},
     },
     task::Waker,
@@ -96,8 +96,8 @@ pub struct WasiProcess {
     pub(crate) pid: WasiProcessId,
     /// Hash of the module that this process is using
     pub(crate) module_hash: ModuleHash,
-    /// List of all the children spawned from this thread
-    pub(crate) parent: Option<Weak<RwLock<WasiProcessInner>>>,
+    /// Recorded before the child is published so proc_parent works from its first instruction.
+    pub(crate) parent: WasiProcessId,
     /// The inner protected region of the process with a conditional
     /// variable that is used for coordination such as snapshots.
     pub(crate) inner: LockableWasiProcessInner,
@@ -468,7 +468,7 @@ impl WasiProcess {
         WasiProcess {
             pid,
             module_hash,
-            parent: None,
+            parent: WasiProcessId(0),
             compute: plane,
             inner: inner.clone(),
             finished: Arc::new(
@@ -504,14 +504,9 @@ impl WasiProcess {
     /// Gets the process ID of the parent process
     pub fn ppid(&self) -> WasiProcessId {
         self.parent
-            .iter()
-            .filter_map(|parent| parent.upgrade())
-            .map(|parent| parent.read().unwrap().pid)
-            .next()
-            .unwrap_or(WasiProcessId(0))
     }
 
-    /// Gains access to the process internals
+/// Gains access to the process internals
     // TODO: Make this private, all inner access should be exposed with methods.
     pub fn lock(&self) -> MutexGuard<'_, WasiProcessInner> {
         self.inner.0.lock().unwrap()
@@ -603,7 +598,7 @@ impl WasiProcess {
 
         if let Some(thread) = inner.threads.get(&tid) {
             if signal == Signal::Sigkill {
-                thread.set_status_finished(Ok(Errno::Intr.into()));
+                thread.set_or_get_exit_code_for_signal(Signal::Sigkill);
                 thread.signal(Signal::Sigwakeup);
             } else {
                 thread.signal(signal);
@@ -994,7 +989,7 @@ fn signal_process_internal(
     if signal == Signal::Sigkill {
         wake_atomic_waiters(&guard, signal);
         for thread in guard.threads.values() {
-            thread.set_status_finished(Ok(Errno::Intr.into()));
+            thread.set_or_get_exit_code_for_signal(Signal::Sigkill);
             thread.signal(Signal::Sigwakeup);
         }
         return;

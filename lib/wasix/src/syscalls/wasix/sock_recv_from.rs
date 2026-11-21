@@ -76,7 +76,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
                 Rights::SOCK_RECV_FROM,
                 |socket, fd| async move {
                     let nonblocking =
-                        nonblocking_flag || fd.inner.flags.contains(Fdflags::NONBLOCK);
+                        nonblocking_flag || fd.inner.status_flags().contains(Fdflags::NONBLOCK);
                     let timeout = socket
                         .opt_time(TimeType::ReadTimeout)
                         .ok()
@@ -107,7 +107,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
                 sock,
                 Rights::SOCK_RECV_FROM,
                 |socket, fd| async move {
-                    let nonblocking = fd.inner.flags.contains(Fdflags::NONBLOCK);
+                    let nonblocking = fd.inner.status_flags().contains(Fdflags::NONBLOCK);
                     let timeout = socket
                         .opt_time(TimeType::ReadTimeout)
                         .ok()

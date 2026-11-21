@@ -1,5 +1,3 @@
-use crate::VIRTUAL_ROOT_FD;
-
 use super::*;
 
 impl JournalEffector {
@@ -35,7 +33,7 @@ impl JournalEffector {
         fst_flags: Fstflags,
     ) -> anyhow::Result<()> {
         // see `VIRTUAL_ROOT_FD` for details as to why this exists
-        if fd == VIRTUAL_ROOT_FD {
+        if fd == ctx.data().state.fs.root_fd() {
             // we ignore this record as its not implemented yet
         } else {
             crate::syscalls::path_filestat_set_times_internal(ctx, fd, flags, path, st_atim, st_mtim, fst_flags)

@@ -61,7 +61,7 @@ pub fn chdir_internal(env: &WasiEnv, path: &str) -> Result<(), Errno> {
     let path = state.fs.relative_path_to_absolute(path.to_string());
     let inode = state
         .fs
-        .get_inode_at_path(&state.inodes, crate::VIRTUAL_ROOT_FD, &path, true)?;
+        .get_inode_at_path(&state.inodes, state.fs.root_fd(), &path, true)?;
 
     let resolved_path = {
         let guard = inode.read();

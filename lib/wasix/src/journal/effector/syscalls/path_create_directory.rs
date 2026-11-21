@@ -2,8 +2,6 @@ use std::path::Path;
 
 use virtual_fs::FileSystem;
 
-use crate::VIRTUAL_ROOT_FD;
-
 use super::*;
 
 impl JournalEffector {
@@ -27,7 +25,7 @@ impl JournalEffector {
         path: &str,
     ) -> anyhow::Result<()> {
         // see `VIRTUAL_ROOT_FD` for details as to why this exists
-        if fd == VIRTUAL_ROOT_FD {
+        if fd == ctx.data().state.fs.root_fd() {
             ctx.data().state.fs.root_fs.create_dir(Path::new(path))?;
         } else {
             crate::syscalls::path_create_directory_internal(ctx, fd, path).map_err(|err| {

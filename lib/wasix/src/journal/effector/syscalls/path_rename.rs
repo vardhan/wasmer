@@ -1,4 +1,4 @@
-use crate::{VIRTUAL_ROOT_FD, syscalls::__asyncify_light};
+use crate::syscalls::__asyncify_light;
 
 use super::*;
 
@@ -29,7 +29,7 @@ impl JournalEffector {
         new_path: &str,
     ) -> anyhow::Result<()> {
         // see `VIRTUAL_ROOT_FD` for details as to why this exists
-        if old_fd == VIRTUAL_ROOT_FD && new_fd == VIRTUAL_ROOT_FD {
+        if old_fd == ctx.data().state.fs.root_fd() && new_fd == ctx.data().state.fs.root_fd() {
             let state = ctx.data().state.clone();
             let old_path = old_path.to_string();
             let new_path = new_path.to_string();
